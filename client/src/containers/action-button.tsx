@@ -1,7 +1,89 @@
-import React from 'react';
+import { gql, Reference, useMutation, useReactiveVar } from "@apollo/client";
+import React from "react";
+import { cartItemsVar } from "../cache";
+import { Button } from "../components";
+import * as LaunchDetailTypes from "../pages/__generated__/LaunchDetails";
 
-const ActionButton: React.FC<any> = () => {
-  return <div/>;
-}
+export const CANCEL_TRIP = gql`
+  mutation cancel($launchId: ID!) {
+    cancelTrip(launchId: $launchId) {
+      success
+      message
+      launches {
+        id
+        isBooked
+      }
+    }
+  }
+`;
+
+interface ActionButtonProps
+  extends Partial<LaunchDetailTypes.LaunchDetails_launch> {}
+
+const CancelTripButton: React.FC<ActionButtonProps> = ({ id }) => {
+  const [mutate, { loading, error }] = useMutation(CANCEL_TRIP, {
+    variables: { launchId: id },
+    update(cache, { data: { cancelTrip } }) {
+      const launch = cancelTrip.launches[0];
+      cache.modify({
+        id: cache.identify({
+          __typename: "User",
+          id: localStorage.getItem("userId"),
+        }),
+        fields: {
+          trips(existingTrips) {
+            const launchRef = cache.writeFragment({
+              data: launch,
+              fragment: gql`
+                fragment RemoveLaunch on Launch {
+                  id
+                }
+              `,
+            });
+            return existingTrips.filter(
+              (tripRef: Reference) => tripRef === launchRef
+            );
+          },
+        },
+      });
+    },
+  });
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>An error occured</p>;
+
+  return (
+    <div>
+      <Button onClick={() => mutate()} data-testid="action-button">
+        Cancel this trip
+      </Button>
+    </div>
+  );
+};
+
+const ToggleTripButton: React.FC<ActionButtonProps> = ({ id }) => {
+  const cartItems = useReactiveVar(cartItemsVar);
+  const isInCart = id ? cartItems.includes(id) : false;
+  return (
+    <div>
+      <Button
+        onClick={() => {
+          if (id) {
+            cartItemsVar(
+              isInCart
+                ? cartItems.filter((itemId) => itemId !== id)
+                : [...cartItems, id]
+            );
+          }
+        }}
+      >
+        {isInCart ? "Remove from cart" : "Add to cart"}
+      </Button>
+    </div>
+  );
+};
+
+const ActionButton: React.FC<ActionButtonProps> = ({ isBooked, id }) =>
+  isBooked ? <CancelTripButton id={id} /> : <ToggleTripButton id={id} />;
 
 export default ActionButton;
